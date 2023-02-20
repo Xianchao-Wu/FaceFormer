@@ -83,25 +83,25 @@ class Faceformer(nn.Module):
         template: (batch_size, V*3)
         vertice: (batch_size, seq_len, V*3)
         """
-        self.dataset = args.dataset # 'BIWI'
+        self.dataset = args.dataset # 'BIWI' ||| 'vocaset'
         self.audio_encoder = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h") 
         # TODO 
         # wav2vec 2.0 weights initialization
         self.audio_encoder.feature_extractor._freeze_parameters()
         self.audio_feature_map = nn.Linear(768, args.feature_dim) 
         # 追加一个线性层，从wav2vec2的768维度到faceformer里面的128维度. NOTE
-        # motion encoder
-        self.vertice_map = nn.Linear(args.vertice_dim, args.feature_dim) # 70110 -> 128
+        # motion encoder ||| 768 to 64 for 'vocaset' data
+        self.vertice_map = nn.Linear(args.vertice_dim, args.feature_dim) # 70110 -> 128 for 'BIWI' ||| 15069 -> 64 for 'vocaset'
         # periodic positional encoding 
-        self.PPE = PeriodicPositionalEncoding(args.feature_dim, period = args.period) 
+        self.PPE = PeriodicPositionalEncoding(args.feature_dim, period = args.period) # 128 and ? for "BIWI" ||| 64 and 30 for 'vocaset'
         # 周期性位置编码
         # temporal bias
         self.biased_mask = init_biased_mask(n_head = 4, 
-                max_seq_len = 600, period=args.period) # [4, 600, 600]
+                max_seq_len = 600, period=args.period) # [4, 600, 600] for 'BIWI' ||| [4, 600, 600] for 'vocaset'
 
         decoder_layer = nn.TransformerDecoderLayer(d_model=args.feature_dim, 
                 nhead=4, dim_feedforward=2*args.feature_dim, batch_first=True) 
-        # d_model=128, nhead=4, dim_feedforward=4*128=512        
+        # d_model=128, nhead=4, dim_feedforward=2*128=256 for 'BIWI' ||| d_model=64, nhead=4, dim_feedforward=2*64=128 for 'vocaset'       
 
         self.transformer_decoder = nn.TransformerDecoder(decoder_layer, 
                 num_layers=1) # 啊，这是只有一层transformer decoder啊！！ NOTE
@@ -110,12 +110,12 @@ class Faceformer(nn.Module):
                 args.vertice_dim) 
         # 128 to 70110 NOTE 输出维度很大啊... 相当于一帧输出图片是70110个数值需要确定
         # 70110 = 23370 * 3
-        # WHY? Linear(in_features=128, out_features=70110, bias=True)
+        # WHY? Linear(in_features=128, out_features=70110, bias=True) ||| 64 to 15069 for 'vocaset'
 
         # style embedding
-        self.obj_vector = nn.Linear(len(args.train_subjects.split()), 
+        self.obj_vector = nn.Linear(len(args.train_subjects.split()), # len=8->64 for 'vocaset'
                 args.feature_dim, bias=False) 
-        # 'F2 F3 F4 M3 M4 M5', len=6; 
+        # 'F2 F3 F4 M3 M4 M5', len=6 -> 128; for 'BIWI'
         # args.feature_dim=128; 
         # 这是从维度6映射到维度128; 
         # -> Linear(in_features=6, out_features=128, bias=False)
@@ -125,22 +125,33 @@ class Faceformer(nn.Module):
         nn.init.constant_(self.vertice_map_r.bias, 0)
 
     def forward(self, audio, template, vertice, 
-            one_hot, criterion,teacher_forcing=True):
+            one_hot, criterion, teacher_forcing=True):
+        # 1. audio.shape = [1, 85867]
+        # 2. template.shape = torch.Size([1, 15069])
+        # 3. vertice.shape = torch.Size([1, 161, 15069]) = face video的参考答案 NOTE
+        # 4. one_hot.shape = torch.Size([1, 8])
+        # 5. criterion = MSELoss()
+        # 6. teacher_forcing = False
+
         # tgt_mask: :math:`(T, T)`.
         # memory_mask: :math:`(T, S)`.
-        template = template.unsqueeze(1) # (1,1, V*3)
-        obj_embedding = self.obj_vector(one_hot) #(1, feature_dim)
-        frame_num = vertice.shape[1]
-        hidden_states = self.audio_encoder(audio, 
+        template = template.unsqueeze(1) # (1,1, V*3), e.g., [1, 1, 15069]
+        obj_embedding = self.obj_vector(one_hot) # NOTE (1, feature_dim), 8 to 64 for vocaset, [1, 8] to [1, 64], linear projection = Linear(in_features=8, out_features=64, bias=False)
+        frame_num = vertice.shape[1] # 帧数，[1, 161, 15069], frame_num=161
+
+        hidden_states = self.audio_encoder(audio, # NOTE audio.shape=[1, 85867]
                 self.dataset, frame_num=frame_num).last_hidden_state
+        # self.dataset='vocaset', frame_num=161 
+        # hidden_states.shape = [1, 161, 768] 
 
         if self.dataset == "BIWI":
             if hidden_states.shape[1]<frame_num*2:
                 vertice = vertice[:, :hidden_states.shape[1]//2]
                 frame_num = hidden_states.shape[1]//2
-        hidden_states = self.audio_feature_map(hidden_states)
+        hidden_states = self.audio_feature_map(hidden_states) # NOTE
+        # 'vocaset': [1, 160, 768] -> [1, 160, 64], Linear(in_features=768, out_features=64, bias=True)
 
-        if teacher_forcing:
+        if teacher_forcing: # False, not in NOTE
             vertice_emb = obj_embedding.unsqueeze(1) # (1,1,feature_dim)
             style_emb = vertice_emb  
             vertice_input = torch.cat((template,vertice[:,:-1]), 1) # shift one position
@@ -155,26 +166,38 @@ class Faceformer(nn.Module):
                     self.dataset, vertice_input.shape[1], hidden_states.shape[1])
             vertice_out = self.transformer_decoder(vertice_input, 
                     hidden_states, tgt_mask=tgt_mask, memory_mask=memory_mask)
-            vertice_out = self.vertice_map_r(vertice_out)
-        else:
-            for i in range(frame_num):
+            vertice_out = self.vertice_map_r(vertice_out) # NOTE linear projection
+        else: # NOTE in here: 
+            for i in range(frame_num): # 160=帧数, 这是用的是参考答案frames num
                 if i==0:
-                    vertice_emb = obj_embedding.unsqueeze(1) # (1,1,feature_dim)
+                    vertice_emb = obj_embedding.unsqueeze(1) # (1,1,feature_dim), [1, 1, 64], vertice_emb.shape=[1, 1, 64]
                     style_emb = vertice_emb
-                    vertice_input = self.PPE(style_emb)
+                    vertice_input = self.PPE(style_emb) # ||| [1, 1, 64]
                 else:
                     vertice_input = self.PPE(vertice_emb)
-                tgt_mask = self.biased_mask[:, 
+
+                tgt_mask = self.biased_mask[:, # [4, 600, 600] -> (i=0) -> [4, 1, 1]
                         :vertice_input.shape[1], 
                         :vertice_input.shape[1]].clone().detach().to(device=self.device)
+
                 memory_mask = enc_dec_mask(self.device, 
                         self.dataset, vertice_input.shape[1], hidden_states.shape[1])
+                # [1, 160] for memory_mask
+                # 这是执行一步transformer decoder: NOTE
                 vertice_out = self.transformer_decoder(vertice_input, 
                         hidden_states, tgt_mask=tgt_mask, memory_mask=memory_mask)
-                vertice_out = self.vertice_map_r(vertice_out)
+                # 1. [1, 1, 64]; 2. torch.Size([1, 160, 64]); 3. [4, 1, 1]; 4. [1, 160]                
+                vertice_out = self.vertice_map_r(vertice_out) # NOTE
+                # 'vocaset': Linear(in_features=64, out_features=15069, bias=True), 
+                # vertice_out.shape = [1, 1, 64] -> [1, 1, 15069]
+
                 new_output = self.vertice_map(vertice_out[:,-1,:]).unsqueeze(1)
-                new_output = new_output + style_emb
-                vertice_emb = torch.cat((vertice_emb, new_output), 1)
+                # Linear(in_features=15069, out_features=64, bias=True) NOTE [1, 1, 15069] -> [1, 1, 64]
+
+                new_output = new_output + style_emb # [1, 1, 64] + [1, 1, 64] -> [1, 1, 64]
+
+                vertice_emb = torch.cat((vertice_emb, new_output), 1) # [1, 2, 64]
+            # 这是用自回归的方式，来预测出来vertice_out
 
         vertice_out = vertice_out + template
         loss = criterion(vertice_out, vertice) # (batch, seq_len, V*3)

@@ -14,11 +14,11 @@ class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
     def __init__(self, data,subjects_dict,data_type="train"):
         self.data = data
-        self.len = len(self.data)
-        self.subjects_dict = subjects_dict
-        self.data_type = data_type
+        self.len = len(self.data) # e.g., 314, 
+        self.subjects_dict = subjects_dict # {'train': ['FaceTalk_170728_03272_TA', 'FaceTalk_170904_00128_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170904_03276_TA', 'FaceTalk_170912_03278_TA'], 'val': ['FaceTalk_170811_03275_TA', 'FaceTalk_170908_03277_TA'], 'test': ['FaceTalk_170809_00138_TA', 'FaceTalk_170731_00024_TA']}
+        self.data_type = data_type # 'train', 'val', 'test'
         self.one_hot_labels = np.eye(len(subjects_dict["train"]))
-
+        # [8, 8] 单位矩阵
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
         # seq_len, fea_dim
@@ -28,10 +28,18 @@ class Dataset(data.Dataset):
         template = self.data[index]["template"]
         if self.data_type == "train":
             subject = "_".join(file_name.split("_")[:-1])
-            one_hot = self.one_hot_labels[self.subjects_dict["train"].index(subject)]
+            one_hot = self.one_hot_labels[self.subjects_dict["train"].index(
+                subject)]
         else:
             one_hot = self.one_hot_labels
-        return torch.FloatTensor(audio),torch.FloatTensor(vertice), torch.FloatTensor(template), torch.FloatTensor(one_hot), file_name
+        import ipdb; ipdb.set_trace()
+        return torch.FloatTensor(audio), torch.FloatTensor(vertice), torch.FloatTensor(template), torch.FloatTensor(one_hot), file_name
+
+        # 1. audio, (85067,)
+        # 2. vertice, (160, 15069) 
+        # 3. template, (15069,)
+        # 4. one_hot, array([0., 0., 0., 1., 0., 0., 0., 0.])
+        # 5. file_name, 'FaceTalk_170915_00223_TA_sentence06.wav'
 
     def __len__(self):
         return self.len
@@ -43,41 +51,48 @@ def read_data(args):
     valid_data = []
     test_data = []
 
-    audio_path = os.path.join(args.dataset, args.wav_path)
-    vertices_path = os.path.join(args.dataset, args.vertices_path)
+    audio_path = os.path.join(args.dataset, args.wav_path) # 'vocaset/wav'
+    vertices_path = os.path.join(args.dataset, args.vertices_path) # 'vocaset/vertices_npy'
     processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
 
-    template_file = os.path.join(args.dataset, args.template_file)
+    template_file = os.path.join(args.dataset, args.template_file) # 'vocaset/templates.pkl'
     with open(template_file, 'rb') as fin:
-        templates = pickle.load(fin,encoding='latin1')
+        templates = pickle.load(fin,encoding='latin1') # dict, keys=dict_keys(['FaceTalk_170904_00128_TA', 'FaceTalk_170811_03275_TA', 'FaceTalk_170728_03272_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170912_03278_TA', 'FaceTalk_170809_00138_TA', 'FaceTalk_170908_03277_TA', 'FaceTalk_170731_00024_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170904_03276_TA'])
     
-    for r, ds, fs in os.walk(audio_path):
+    for r, ds, fs in os.walk(audio_path): # len(fs)=475
         for f in tqdm(fs):
-            if f.endswith("wav"):
-                wav_path = os.path.join(r,f)
-                speech_array, sampling_rate = librosa.load(wav_path, sr=16000)
-                input_values = np.squeeze(processor(speech_array,sampling_rate=16000).input_values)
-                key = f.replace("wav", "npy")
+            if f.endswith("wav"): # 'FaceTalk_170915_00223_TA_sentence21.wav'
+                wav_path = os.path.join(r,f) # 'vocaset/wav/FaceTalk_170915_00223_TA_sentence21.wav'
+                speech_array, sampling_rate = librosa.load(wav_path, sr=16000) # TODO 这里可以指定使用的audio的采样率; e.g., speech_array.shape=(69067,)
+                input_values = np.squeeze(  
+                        processor(speech_array,sampling_rate=16000).input_values)
+                # 上面是对音频的预处理. output is input_values.shape=(69067,)
+                key = f.replace("wav", "npy") # 'FaceTalk_170915_00223_TA_sentence21.npy'
                 data[key]["audio"] = input_values
-                subject_id = "_".join(key.split("_")[:-1])
-                temp = templates[subject_id]
-                data[key]["name"] = f
-                data[key]["template"] = temp.reshape((-1)) 
-                vertice_path = os.path.join(vertices_path,f.replace("wav", "npy"))
+                subject_id = "_".join(key.split("_")[:-1]) # 'FaceTalk_170915_00223_TA'
+                temp = templates[subject_id] # temp.shape = (5023, 3)
+                data[key]["name"] = f # f = 'FaceTalk_170915_00223_TA_sentence21.wav'
+                data[key]["template"] = temp.reshape((-1)) # temp from (5023, 3) to (15069,)
+                vertice_path = os.path.join(vertices_path,f.replace("wav", "npy")) # 'vocaset/vertices_npy/FaceTalk_170915_00223_TA_sentence21.npy'
                 if not os.path.exists(vertice_path):
                     del data[key]
                 else:
                     if args.dataset == "vocaset":
-                        data[key]["vertice"] = np.load(vertice_path,allow_pickle=True)[::2,:]#due to the memory limit
+                        data[key]["vertice"] = np.load(
+                                vertice_path,allow_pickle=True)[::2,:] # (259, 15069) --> half --> (130, 15069)
+                        #due to the memory limit
                     elif args.dataset == "BIWI":
-                        data[key]["vertice"] = np.load(vertice_path,allow_pickle=True)
+                        data[key]["vertice"] = np.load(
+                                vertice_path,allow_pickle=True)
 
     subjects_dict = {}
-    subjects_dict["train"] = [i for i in args.train_subjects.split(" ")]
-    subjects_dict["val"] = [i for i in args.val_subjects.split(" ")]
-    subjects_dict["test"] = [i for i in args.test_subjects.split(" ")]
+    subjects_dict["train"] = [i for i in args.train_subjects.split(" ")] # 8, 'FaceTalk_170728_03272_TA FaceTalk_170904_00128_TA FaceTalk_170725_00137_TA FaceTalk_170915_00223_TA FaceTalk_170811_03274_TA FaceTalk_170913_03279_TA FaceTalk_170904_03276_TA FaceTalk_170912_03278_TA'
+    subjects_dict["val"] = [i for i in args.val_subjects.split(" ")] # 2, 'FaceTalk_170811_03275_TA FaceTalk_170908_03277_TA'
+    subjects_dict["test"] = [i for i in args.test_subjects.split(" ")] # 2, 'FaceTalk_170809_00138_TA FaceTalk_170731_00024_TA'
 
-    splits = {'vocaset':{'train':range(1,41),'val':range(21,41),'test':range(21,41)},
+    splits = {
+            'vocaset':{'train':range(1,41),'val':range(21,41),'test':range(21,41)}, # TODO why in this range? 
+
      'BIWI':{'train':range(1,33),'val':range(33,37),'test':range(37,41)}}
    
     for k, v in data.items():
@@ -90,18 +105,30 @@ def read_data(args):
         if subject_id in subjects_dict["test"] and sentence_id in splits[args.dataset]['test']:
             test_data.append(v)
 
-    print(len(train_data), len(valid_data), len(test_data))
+    print(len(train_data), len(valid_data), len(test_data)) # 314 40 39
     return train_data, valid_data, test_data, subjects_dict
+    # len(train_data) = 314, which is from 0 to 313
+    # train_data[0] is a dict with keys = dict_keys(['audio', 'name', 'template', 'vertice'])
+    # 1. train_data[0]['audio'].shape=(69067,)
+    # 2. train_data[0]['name']='FaceTalk_170915_00223_TA_sentence21.wav'
+    # 3. train_data[0]['template'].shape = (15069,)
+    # 4. train_data[0]['vertice'].shape = (130, 15069)
+
+    # 训练数据有8个主题；val数据有2个主题subjects；test数据有2个主题subjects. NOTE 
+    # subjects_dict = {'train': ['FaceTalk_170728_03272_TA', 'FaceTalk_170904_00128_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170904_03276_TA', 'FaceTalk_170912_03278_TA'], 'val': ['FaceTalk_170811_03275_TA', 'FaceTalk_170908_03277_TA'], 'test': ['FaceTalk_170809_00138_TA', 'FaceTalk_170731_00024_TA']}
 
 def get_dataloaders(args):
     dataset = {}
     train_data, valid_data, test_data, subjects_dict = read_data(args)
     train_data = Dataset(train_data,subjects_dict,"train")
-    dataset["train"] = data.DataLoader(dataset=train_data, batch_size=1, shuffle=True)
+    dataset["train"] = data.DataLoader(
+            dataset=train_data, batch_size=1, shuffle=True)
     valid_data = Dataset(valid_data,subjects_dict,"val")
-    dataset["valid"] = data.DataLoader(dataset=valid_data, batch_size=1, shuffle=False)
+    dataset["valid"] = data.DataLoader(
+            dataset=valid_data, batch_size=1, shuffle=False)
     test_data = Dataset(test_data,subjects_dict,"test")
-    dataset["test"] = data.DataLoader(dataset=test_data, batch_size=1, shuffle=False)
+    dataset["test"] = data.DataLoader(
+            dataset=test_data, batch_size=1, shuffle=False)
     return dataset
 
 if __name__ == "__main__":

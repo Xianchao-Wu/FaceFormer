@@ -111,7 +111,7 @@ class Wav2Vec2Model(Wav2Vec2Model):
             ] = 1
             attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
         import ipdb; ipdb.set_trace()
-        hidden_states, norm_hidden_states = self.feature_projection(hidden_states) # [1, 574, 512] -> hidden_states=0-th: [1, 574, 768]; norm_hidden_states=1-th: [1, 574, 512] TODO hidden_states = LN -> projection -> dropout; and norm_hidden_states = LN -> 算是只经过了layer norm的中间结果张量
+        hidden_states, norm_hidden_states = self.feature_projection(hidden_states) # [1, 574, 512] -> hidden_states=0-th: [1, 574, 768]; norm_hidden_states=1-th: [1, 574, 512] TODO hidden_states = LN -> projection -> dropout; and norm_hidden_states = LN -> 算是只经过了layer norm的中间结果张量 ||| 'vocaset, train', hidden_states.shape=[1, 160, 768]
 
         if self.config.apply_spec_augment and self.training: # NOTE not in
             batch_size, sequence_length, hidden_size = hidden_states.size()
@@ -134,18 +134,18 @@ class Wav2Vec2Model(Wav2Vec2Model):
                 hidden_states[mask_feature_indices[:, None].expand(-1, sequence_length, -1)] = 0
         import ipdb; ipdb.set_trace() # NOTE, TODO need to modify hidden_states...
         encoder_outputs = self.encoder( # 12 layers of transformer encoder!
-            hidden_states, # shape=[1, 574, 768]
-            attention_mask=attention_mask, # None
-            output_attentions=output_attentions, # True
-            output_hidden_states=output_hidden_states, # False
-            return_dict=return_dict, # True
+            hidden_states, # shape=[1, 574, 768] ||| [1, 160, 768]
+            attention_mask=attention_mask, # None ||| None
+            output_attentions=output_attentions, # True ||| True
+            output_hidden_states=output_hidden_states, # False ||| False
+            return_dict=return_dict, # True ||| True
         ) # len=2, 0-th=[1, 574, 768]; 1-th=tuple, len=12 是12层encoder的中间输出结果
-        hidden_states = encoder_outputs[0] # [1, 574, 768]
+        hidden_states = encoder_outputs[0] # [1, 574, 768] for 'BIWI' ||| [1, 160, 768] for 'vocaset'
         if not return_dict: # return_dict=True
             return (hidden_states,) + encoder_outputs[1:]
         # NOTE 下面这个是输出，非常重要！
         return BaseModelOutput(
-            last_hidden_state=hidden_states, # [1, 574, 768]
-            hidden_states=encoder_outputs.hidden_states, # None NOTE
-            attentions=encoder_outputs.attentions, # len=12, 0-th.shape=[1, 12, 574, 574], ..., all in the shape of [1, 12, 574, 574]
+            last_hidden_state=hidden_states, # [1, 574, 768] ||| torch.Size([1, 160, 768])
+            hidden_states=encoder_outputs.hidden_states, # None NOTE ||| NOTE
+            attentions=encoder_outputs.attentions, # len=12, 0-th.shape=[1, 12, 574, 574], ..., all in the shape of [1, 12, 574, 574] ||| len=12, 0-th.shape=torch.Size([1, 160, 768])
         )
