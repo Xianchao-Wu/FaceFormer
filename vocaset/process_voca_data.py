@@ -7,12 +7,16 @@ import numpy as np
 from scipy.io import wavfile
 
 def load_data(args):
+    import ipdb; ipdb.set_trace()
     face_vert_mmap = np.load(args.verts_path, mmap_mode='r+')
     raw_audio = pickle.load(open(args.raw_audio_path, 'rb'), encoding='latin1')
     data2array_verts = pickle.load(open(args.data2array_verts_path, 'rb'))
+
+    import ipdb; ipdb.set_trace()
     return face_vert_mmap,raw_audio,data2array_verts
 
 def generate_vertices_npy(args,face_vert_mmap,data2array_verts):
+    import ipdb; ipdb.set_trace()
     if not os.path.exists(args.vertices_npy_path):
         os.makedirs(args.vertices_npy_path)
     for sub in data2array_verts.keys():
@@ -24,7 +28,11 @@ def generate_vertices_npy(args,face_vert_mmap,data2array_verts):
             vertices_npy = np.array(vertices_npy).reshape(-1,args.vertices_dim)
             np.save(os.path.join(args.vertices_npy_path,vertices_npy_name) ,vertices_npy)
 
+    import ipdb; ipdb.set_trace()
+    print('done')
+
 def generate_wav(args,raw_audio):
+    import ipdb; ipdb.set_trace()
     if not os.path.exists(args.wav_path):
         os.makedirs(args.wav_path)
     for sub in raw_audio.keys():
@@ -32,7 +40,11 @@ def generate_wav(args,raw_audio):
             wav_name = sub + "_" + seq 
             wavfile.write(os.path.join(args.wav_path, wav_name+'.wav'), raw_audio[sub][seq]['sample_rate'], raw_audio[sub][seq]['audio'])        
 
+    import ipdb; ipdb.set_trace()
+    print('done')
+
 def main():
+    import ipdb; ipdb.set_trace()
     parser = argparse.ArgumentParser()
     parser.add_argument("--verts_path", type=str, default="data_verts.npy")
     parser.add_argument("--vertices_npy_path", type=str, default="vertices_npy")
@@ -42,8 +54,14 @@ def main():
     parser.add_argument("--data2array_verts_path", type=str, default='subj_seq_to_idx.pkl')
     args = parser.parse_args()
 
+    
+    import ipdb; ipdb.set_trace()
     face_vert_mmap,raw_audio,data2array_verts = load_data(args)
+
+    import ipdb; ipdb.set_trace()
     generate_vertices_npy(args,face_vert_mmap,data2array_verts)
+
+    import ipdb; ipdb.set_trace()
     generate_wav(args,raw_audio)
 
 if __name__ == '__main__':

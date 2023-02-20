@@ -74,34 +74,34 @@ class Wav2Vec2Model(Wav2Vec2Model):
         super().__init__(config)
     def forward(
         self,
-        input_values,
-        dataset,
-        attention_mask=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        frame_num=None
+        input_values, # torch.Size([1, 184274])
+        dataset, # 'BIWI'
+        attention_mask=None, # None
+        output_attentions=None, # None
+        output_hidden_states=None, # None
+        return_dict=None, # None
+        frame_num=None # None
     ):
         self.config.output_attentions = True
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions # True
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        ) # False
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict # True
 
-        hidden_states = self.feature_extractor(input_values)
-        hidden_states = hidden_states.transpose(1, 2)
+        hidden_states = self.feature_extractor(input_values) # [1, 184274] -> 7层卷积 -> [1, 512, 575]
+        hidden_states = hidden_states.transpose(1, 2) # -> [1, 575=seq.len, 512]
 
-        if dataset == "BIWI":
+        if dataset == "BIWI": # NOTE here
             # cut audio feature
-            if hidden_states.shape[1]%2 != 0:
-                hidden_states = hidden_states[:, :-1]
+            if hidden_states.shape[1]%2 != 0: # 575%2!=0
+                hidden_states = hidden_states[:, :-1] # here, NOTE, [1, 574, 512]
             if frame_num and hidden_states.shape[1]>frame_num*2:
-                hidden_states = hidden_states[:, :frame_num*2]
+                hidden_states = hidden_states[:, :frame_num*2] # not in here
         elif dataset == "vocaset":
             hidden_states = linear_interpolation(hidden_states, 50, 30,output_len=frame_num)
      
-        if attention_mask is not None:
+        if attention_mask is not None: # None, not in
             output_lengths = self._get_feat_extract_output_lengths(attention_mask.sum(-1))
             attention_mask = torch.zeros(
                 hidden_states.shape[:2], dtype=hidden_states.dtype, device=hidden_states.device
@@ -110,10 +110,10 @@ class Wav2Vec2Model(Wav2Vec2Model):
                 (torch.arange(attention_mask.shape[0], device=hidden_states.device), output_lengths - 1)
             ] = 1
             attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
+        import ipdb; ipdb.set_trace()
+        hidden_states, norm_hidden_states = self.feature_projection(hidden_states) # [1, 574, 512] -> hidden_states=0-th: [1, 574, 768]; norm_hidden_states=1-th: [1, 574, 512] TODO hidden_states = LN -> projection -> dropout; and norm_hidden_states = LN -> 算是只经过了layer norm的中间结果张量
 
-        hidden_states = self.feature_projection(hidden_states)
-
-        if self.config.apply_spec_augment and self.training:
+        if self.config.apply_spec_augment and self.training: # NOTE not in
             batch_size, sequence_length, hidden_size = hidden_states.size()
             if self.config.mask_time_prob > 0:
                 mask_time_indices = _compute_mask_indices(
@@ -132,19 +132,20 @@ class Wav2Vec2Model(Wav2Vec2Model):
                 )
                 mask_feature_indices = torch.from_numpy(mask_feature_indices).to(hidden_states.device)
                 hidden_states[mask_feature_indices[:, None].expand(-1, sequence_length, -1)] = 0
-        encoder_outputs = self.encoder(
-            hidden_states,
-            attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        hidden_states = encoder_outputs[0]
-        if not return_dict:
+        import ipdb; ipdb.set_trace() # NOTE, TODO need to modify hidden_states...
+        encoder_outputs = self.encoder( # 12 layers of transformer encoder!
+            hidden_states, # shape=[1, 574, 768]
+            attention_mask=attention_mask, # None
+            output_attentions=output_attentions, # True
+            output_hidden_states=output_hidden_states, # False
+            return_dict=return_dict, # True
+        ) # len=2, 0-th=[1, 574, 768]; 1-th=tuple, len=12 是12层encoder的中间输出结果
+        hidden_states = encoder_outputs[0] # [1, 574, 768]
+        if not return_dict: # return_dict=True
             return (hidden_states,) + encoder_outputs[1:]
-
+        # NOTE 下面这个是输出，非常重要！
         return BaseModelOutput(
-            last_hidden_state=hidden_states,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
+            last_hidden_state=hidden_states, # [1, 574, 768]
+            hidden_states=encoder_outputs.hidden_states, # None NOTE
+            attentions=encoder_outputs.attentions, # len=12, 0-th.shape=[1, 12, 574, 574], ..., all in the shape of [1, 12, 574, 574]
         )
