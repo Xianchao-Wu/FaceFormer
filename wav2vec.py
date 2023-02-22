@@ -111,7 +111,7 @@ class Wav2Vec2Model(Wav2Vec2Model):
             ] = 1
             attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
         import ipdb; ipdb.set_trace()
-        hidden_states, norm_hidden_states = self.feature_projection(hidden_states) # [1, 574, 512] -> hidden_states=0-th: [1, 574, 768]; norm_hidden_states=1-th: [1, 574, 512] TODO hidden_states = LN -> projection -> dropout; and norm_hidden_states = LN -> 算是只经过了layer norm的中间结果张量 ||| 'vocaset, train', hidden_states.shape=[1, 160, 768]
+        hidden_states, norm_hidden_states = self.feature_projection(hidden_states) # [1, 574, 512] -> hidden_states=0-th: [1, 574, 768]; norm_hidden_states=1-th: [1, 574, 512] TODO hidden_states = LN -> projection -> dropout; and norm_hidden_states = LN -> 算是只经过了layer norm的中间结果张量 ||| 'vocaset, train', in hidden_states.shape=[1, 345, 768], out hidden_states.shape=[1, 345, 768]
 
         if self.config.apply_spec_augment and self.training: # NOTE not in
             batch_size, sequence_length, hidden_size = hidden_states.size()
@@ -134,13 +134,13 @@ class Wav2Vec2Model(Wav2Vec2Model):
                 hidden_states[mask_feature_indices[:, None].expand(-1, sequence_length, -1)] = 0
         import ipdb; ipdb.set_trace() # NOTE, TODO need to modify hidden_states...
         encoder_outputs = self.encoder( # 12 layers of transformer encoder!
-            hidden_states, # shape=[1, 574, 768] ||| [1, 160, 768]
+            hidden_states, # shape=[1, 574, 768] ||| [1, 160, 768] = vocaset.train ||| [1, 345, 768] = vocaset.demo 
             attention_mask=attention_mask, # None ||| None
             output_attentions=output_attentions, # True ||| True
             output_hidden_states=output_hidden_states, # False ||| False
             return_dict=return_dict, # True ||| True
-        ) # len=2, 0-th=[1, 574, 768]; 1-th=tuple, len=12 是12层encoder的中间输出结果
-        hidden_states = encoder_outputs[0] # [1, 574, 768] for 'BIWI' ||| [1, 160, 768] for 'vocaset'
+        ) # len=2, 0-th=[1, 574, 768]; 1-th=tuple, len=12 是12层encoder的中间输出结果 ||| len=2, 0-th=[1, 345, 768], 1-th=tuple with 12 encoder layer's outputs
+        hidden_states = encoder_outputs[0] # [1, 574, 768] for 'BIWI' ||| [1, 160, 768] for 'vocaset.train' ||| [1, 345, 768] for vocaset.demo
         if not return_dict: # return_dict=True
             return (hidden_states,) + encoder_outputs[1:]
         # NOTE 下面这个是输出，非常重要！
@@ -149,3 +149,8 @@ class Wav2Vec2Model(Wav2Vec2Model):
             hidden_states=encoder_outputs.hidden_states, # None NOTE ||| NOTE
             attentions=encoder_outputs.attentions, # len=12, 0-th.shape=[1, 12, 574, 574], ..., all in the shape of [1, 12, 574, 574] ||| len=12, 0-th.shape=torch.Size([1, 160, 768])
         )
+
+        # vocaset.demo:
+        # hidden_states.shape = [1, 345, 768]
+        # None
+        # attentions = a tuple with 12 elements, all with shape=[1, 12, 345, 345] for attention scores (matrix)

@@ -20,7 +20,7 @@ import trimesh
 
 @torch.no_grad()
 def test_model(args):
-    if not os.path.exists(args.result_path):
+    if not os.path.exists(args.result_path): # 'demo/result'
         os.makedirs(args.result_path)
     import ipdb; ipdb.set_trace()
     #build model
@@ -28,35 +28,38 @@ def test_model(args):
     model.load_state_dict(torch.load(os.path.join(args.dataset, 
         '{}.pth'.format(args.model_name))))
     model = model.to(torch.device(args.device)) 
-    # 可训练参数, 108,487,646=108.5M; 全体参数, 112,688,094=112.7M
-
+    # 可训练参数, [biwi] 108,487,646=108.5M; 全体参数, 112,688,094=112.7M
+    # [vocaset] 92,215,197 = 92.2M 参数规模 for vocaset dataset.
     model.eval()
     
     # 面部模板文件，BIWI以及VOCASET分别有定义自己的模板
     template_file = os.path.join(args.dataset, args.template_path) 
-    # 'BIWI/templates.pkl'
+    # 'BIWI/templates.pkl' ||| 'vocaset/templates.pkl'
 
     with open(template_file, 'rb') as fin:
         templates = pickle.load(fin,encoding='latin1') 
-        # dict_keys(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 
+        # [BIWI] dict_keys(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 
         # 'M1', 'M2', 'M3', 'M4', 'M5', 'M6']) 面部face有8个点；嘴mouth有6个点. NOTE
+        # [vocaset] 12 keys for vocaset, dict_keys(['FaceTalk_170904_00128_TA', 'FaceTalk_170811_03275_TA', 'FaceTalk_170728_03272_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170912_03278_TA', 'FaceTalk_170809_00138_TA', 'FaceTalk_170908_03277_TA', 'FaceTalk_170731_00024_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170904_03276_TA'])
 
     train_subjects_list = [i for i in args.train_subjects.split(" ")] 
-    # 'F2 F3 F4 M3 M4 M5' -> ['F2', 'F3', 'F4', 'M3', 'M4', 'M5']
+    # [BIWI] 'F2 F3 F4 M3 M4 M5' -> ['F2', 'F3', 'F4', 'M3', 'M4', 'M5']
+    # [vocaset] 8 keys as 'train': ['FaceTalk_170728_03272_TA', 'FaceTalk_170904_00128_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170904_03276_TA', 'FaceTalk_170912_03278_TA']
 
-    one_hot_labels = np.eye(len(train_subjects_list)) # (6, 6) I 单位矩阵
+    one_hot_labels = np.eye(len(train_subjects_list)) # (6, 6) I 单位矩阵 ||| (8, 8) for vocaset
     iter = train_subjects_list.index(args.condition) 
-    # TODO args.condition='M3' 这个是啥意思? iter=3, mouth-3?
+    # TODO args.condition='M3' 这个是啥意思? iter=3, mouth-3? for the 3-rd subject
+    # 'vocaset', 'FaceTalk_170913_03279_TA', iter=5 for the 5-th subject
 
-    one_hot = one_hot_labels[iter] # array([0., 0., 0., 1., 0., 0.])
-    one_hot = np.reshape(one_hot,(-1,one_hot.shape[0])) # one_hot.shape = (6,) -> (1, 6)
-    one_hot = torch.FloatTensor(one_hot).to(device=args.device) # [1, 6] in tensor format
+    one_hot = one_hot_labels[iter] # array([0., 0., 0., 1., 0., 0.]) ||| array([0., 0., 0., 0., 0., 1., 0., 0.])
+    one_hot = np.reshape(one_hot,(-1,one_hot.shape[0])) # one_hot.shape = (6,) -> (1, 6) ||| array([[0., 0., 0., 0., 0., 1., 0., 0.]]) with shape = (1, 8)
+    one_hot = torch.FloatTensor(one_hot).to(device=args.device) # [1, 6] in tensor format ||| torch.Size([1, 8])
 
-    temp = templates[args.subject] # args.subject='M1', mouth 1; temp=[23370, 3], 
+    temp = templates[args.subject] # args.subject='M1', mouth 1; temp=[23370, 3], ||| 'FaceTalk_170809_00138_TA', (5023, 3) for 'vocaset'
              
-    template = temp.reshape((-1)) # [23370, 3] -> 拍平 -> (70110,)
-    template = np.reshape(template,(-1,template.shape[0])) # (1, 70110)
-    template = torch.FloatTensor(template).to(device=args.device) # torch.Size([1, 70110])
+    template = temp.reshape((-1)) # [23370, 3] -> 拍平 -> (70110,) ||| (15069,)
+    template = np.reshape(template,(-1,template.shape[0])) # (1, 70110) ||| (1, 15069)
+    template = torch.FloatTensor(template).to(device=args.device) # torch.Size([1, 70110]) ||| torch.Size([1, 15069])
 
     # 读取音频文件输入：
     wav_path = args.wav_path # 'demo/wav/test.wav'
@@ -78,10 +81,10 @@ def test_model(args):
     import ipdb; ipdb.set_trace() # NOTE important here!
     prediction = model.predict(audio_feature, template, one_hot) 
     # audio_feature.shape=[1, 184274], 
-    # template.shape=[1, 70110], 
-    # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0')
+    # template.shape=[1, 70110], ||| [1, 15069] for 'vocaset'
+    # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0') ||| torch.Size([1, 8])
 
-    # prediction.shape = [1, 278, 70110]
+    # OUTPUT: prediction.shape = [1, 278, 70110] ||| [1, 278, 15069]
     # 278 = frame.num/2, 每两帧语音对应到一个包括了70110个点的“图片”
     # 70110 = (23370, 3)
 
@@ -213,7 +216,7 @@ def render_sequence(args):
 
     writer.release()
     file_name = test_name+"_"+args.subject+"_condition_"+args.condition
-
+    import ipdb; ipdb.set_trace()
     video_fname = os.path.join(output_path, file_name+'.mp4')
     cmd = ('ffmpeg' + ' -i {0} -pix_fmt yuv420p -qscale 0 {1}'.format(
        tmp_video_file.name, video_fname)).split()
