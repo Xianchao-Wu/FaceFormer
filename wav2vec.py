@@ -62,25 +62,34 @@ def _compute_mask_indices(
 
 # linear interpolation layer
 def linear_interpolation(features, input_fps, output_fps, output_len=None):
-    features = features.transpose(1, 2)
-    seq_len = features.shape[2] / float(input_fps)
-    if output_len is None:
-        output_len = int(seq_len * output_fps)
-    output_features = F.interpolate(features,size=output_len,align_corners=True,mode='linear')
-    return output_features.transpose(1, 2)
+    import ipdb; ipdb.set_trace()
+    # features.shape = [1, 265, 512]
+    # input_fps = 50, TODO why?
+    # output_fps = 30, TODO why?
+    # output_len = 160, NOTE 这个是来自视频帧的帧数！！！ 
+    features = features.transpose(1, 2) # [1, 512, 265]
+    seq_len = features.shape[2] / float(input_fps) # 265/50 = 5.3
+
+    if output_len is None: # 当，没有参考的视频帧 的帧数的时候，主动预估一下：
+        output_len = int(seq_len * output_fps) # TODO
+    output_features = F.interpolate(features,
+            size=output_len,align_corners=True,mode='linear') # NOTE TODO, features.shape=[1, 512, 265], size=160=目标视频帧的帧数，这是从265个音频timesteps，到160个视频帧，使用线性插值做一下所谓的“对齐”，即让音频的长度，和视频帧的帧数，对齐一下。从265到160。
+    # [1, 512, 160]，这是和视频帧帧数160对齐之后的，音频的表示张量，长度为160个音频切片。每个切片会对应到一个video frame。
+
+    return output_features.transpose(1, 2) # [1, 512, 160] -> [1, 160, 512]
 
 class Wav2Vec2Model(Wav2Vec2Model):
     def __init__(self, config):
         super().__init__(config)
     def forward(
         self,
-        input_values, # torch.Size([1, 184274])
-        dataset, # 'BIWI'
-        attention_mask=None, # None
-        output_attentions=None, # None
-        output_hidden_states=None, # None
-        return_dict=None, # None
-        frame_num=None # None
+        input_values, # torch.Size([1, 184274]) ||| [1, 85067]
+        dataset, # 'BIWI' ||| 'vocaset'
+        attention_mask=None, # None ||| None
+        output_attentions=None, # None ||| None
+        output_hidden_states=None, # None ||| None
+        return_dict=None, # None ||| None
+        frame_num=None # None ||| 160 TODO
     ):
         self.config.output_attentions = True
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions # True
@@ -89,8 +98,8 @@ class Wav2Vec2Model(Wav2Vec2Model):
         ) # False
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict # True
 
-        hidden_states = self.feature_extractor(input_values) # [1, 184274] -> 7层卷积 -> [1, 512, 575]
-        hidden_states = hidden_states.transpose(1, 2) # -> [1, 575=seq.len, 512]
+        hidden_states = self.feature_extractor(input_values) # [1, 184274] -> 7层卷积 -> [1, 512, 575] ||| 'vocaset', [1, 85067] -> [1, 512, 265]
+        hidden_states = hidden_states.transpose(1, 2) # -> [1, 575=seq.len, 512] ||| [1, 265, 512], 
 
         if dataset == "BIWI": # NOTE here
             # cut audio feature

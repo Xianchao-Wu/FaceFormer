@@ -32,18 +32,18 @@ def trainer(args, train_loader,
         loss_log = []
         # train
         model.train()
-        pbar = tqdm(enumerate(train_loader),total=len(train_loader))
+        pbar = tqdm(enumerate(train_loader), total=len(train_loader))
         optimizer.zero_grad()
         
         # 对一个batch的数据循环：
         for i, (audio, vertice, template, one_hot, file_name) in pbar:
             iteration += 1
             # to gpu
-            audio = audio.to(device='cuda') # [1, 85867]
-            vertice = vertice.to(device="cuda") # torch.Size([1, 161, 15069])
-            template = template.to(device="cuda") # torch.Size([1, 15069])
+            audio = audio.to(device='cuda') # [1, 85067], 85067/16000=5.32秒的音频
+            vertice = vertice.to(device="cuda") # torch.Size([1, 160, 15069]) 视频中有160帧
+            template = template.to(device="cuda") # torch.Size([1, 15069]), 视频模板
             one_hot = one_hot.to(device="cuda") 
-            # one_hot = tensor([[0., 0., 0., 0., 0., 0., 1., 0.]]), 
+            # one_hot = tensor([[0., 0., 0., 1., 0., 0., 0., 0.]]), 
             # -> shape=[1, 8]; 这是对一个subject[主题]的one-hot的表示. NOTE
             # file_name = ('FaceTalk_170904_03276_TA_sentence10.wav',)
 
@@ -236,7 +236,7 @@ def main():
     
     import ipdb; ipdb.set_trace()
     print("model parameters: ", count_parameters(model)) 
-    # 92,215,197=92M for 'vocaset' config
+    # 92,215,197=92M for 'vocaset' config; 如果是所有的参数：96,415,645. 即7层TCN in w2v model不需要训练.
 
     # to cuda
     assert torch.cuda.is_available()
@@ -256,12 +256,12 @@ def main():
     # Train the model
     import ipdb; ipdb.set_trace()
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, 
-        model.parameters()), lr=args.lr)
+        model.parameters()), lr=args.lr) # args.lr=0.0001
 
-    import ipdb; ipdb.set_trace()
+    import ipdb; ipdb.set_trace() # NOTE 开始训练了...
     model = trainer(args, dataset["train"], 
         dataset["valid"], model, optimizer, criterion, epoch=args.max_epoch)
-    # args.max_epoch=100, 
+    # args.max_epoch=100, MSELoss=criterion,  
     import ipdb; ipdb.set_trace()
     test(args, model, dataset["test"], epoch=args.max_epoch)
     
