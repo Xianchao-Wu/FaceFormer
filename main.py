@@ -40,7 +40,9 @@ def trainer(args, train_loader,
             iteration += 1
             # to gpu
             audio = audio.to(device='cuda') # [1, 85067], 85067/16000=5.32秒的音频
-            vertice = vertice.to(device="cuda") # torch.Size([1, 160, 15069]) 视频中有160帧
+            vertice = vertice.to(device="cuda") 
+            # torch.Size([1, 160, 15069]) 视频中有160帧
+
             template = template.to(device="cuda") # torch.Size([1, 15069]), 视频模板
             one_hot = one_hot.to(device="cuda") 
             # one_hot = tensor([[0., 0., 0., 1., 0., 0., 0., 0.]]), 
@@ -236,7 +238,8 @@ def main():
     
     import ipdb; ipdb.set_trace()
     print("model parameters: ", count_parameters(model)) 
-    # 92,215,197=92M for 'vocaset' config; 如果是所有的参数：96,415,645. 即7层TCN in w2v model不需要训练.
+    # 92,215,197=92M for 'vocaset' config; 如果是所有的参数：96,415,645. 
+    # 即7层TCN in w2v model不需要训练.
 
     # to cuda
     assert torch.cuda.is_available()

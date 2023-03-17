@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import scipy.io.wavfile as wav
 import librosa
 import os,sys,shutil,argparse,copy,pickle
@@ -23,10 +24,10 @@ def test_model(args):
     if not os.path.exists(args.result_path): # 'demo/result'
         os.makedirs(args.result_path)
     import ipdb; ipdb.set_trace()
-    #build model
+    # build model
     model = Faceformer(args)
     model.load_state_dict(torch.load(os.path.join(args.dataset, 
-        '{}.pth'.format(args.model_name))))
+        '{}.pth'.format(args.model_name)))) # 'BIWI/biwi.pth'
     model = model.to(torch.device(args.device)) 
     # 可训练参数, [biwi] 108,487,646=108.5M; 全体参数, 112,688,094=112.7M
     # [vocaset] 92,215,197 = 92.2M 参数规模 for vocaset dataset.
@@ -40,30 +41,54 @@ def test_model(args):
         templates = pickle.load(fin,encoding='latin1') 
         # [BIWI] dict_keys(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 
         # 'M1', 'M2', 'M3', 'M4', 'M5', 'M6']) 面部face有8个点；嘴mouth有6个点. NOTE
-        # [vocaset] 12 keys for vocaset, dict_keys(['FaceTalk_170904_00128_TA', 'FaceTalk_170811_03275_TA', 'FaceTalk_170728_03272_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170912_03278_TA', 'FaceTalk_170809_00138_TA', 'FaceTalk_170908_03277_TA', 'FaceTalk_170731_00024_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170904_03276_TA'])
+        # [vocaset] 12 keys for vocaset, dict_keys(['FaceTalk_170904_00128_TA', 
+        # 'FaceTalk_170811_03275_TA', 'FaceTalk_170728_03272_TA', 
+        # 'FaceTalk_170725_00137_TA', 'FaceTalk_170811_03274_TA', 
+        # 'FaceTalk_170912_03278_TA', 'FaceTalk_170809_00138_TA', 
+        # 'FaceTalk_170908_03277_TA', 'FaceTalk_170731_00024_TA', 
+        # 'FaceTalk_170913_03279_TA', 'FaceTalk_170915_00223_TA', 
+        # 'FaceTalk_170904_03276_TA'])
 
     train_subjects_list = [i for i in args.train_subjects.split(" ")] 
     # [BIWI] 'F2 F3 F4 M3 M4 M5' -> ['F2', 'F3', 'F4', 'M3', 'M4', 'M5']
-    # [vocaset] 8 keys as 'train': ['FaceTalk_170728_03272_TA', 'FaceTalk_170904_00128_TA', 'FaceTalk_170725_00137_TA', 'FaceTalk_170915_00223_TA', 'FaceTalk_170811_03274_TA', 'FaceTalk_170913_03279_TA', 'FaceTalk_170904_03276_TA', 'FaceTalk_170912_03278_TA']
+    # [vocaset] 8 keys as 'train': ['FaceTalk_170728_03272_TA', 
+    # 'FaceTalk_170904_00128_TA', 'FaceTalk_170725_00137_TA', 
+    # 'FaceTalk_170915_00223_TA', 'FaceTalk_170811_03274_TA', 
+    # 'FaceTalk_170913_03279_TA', 'FaceTalk_170904_03276_TA', 
+    # 'FaceTalk_170912_03278_TA']
 
-    one_hot_labels = np.eye(len(train_subjects_list)) # (6, 6) I 单位矩阵 ||| (8, 8) for vocaset
+    one_hot_labels = np.eye(len(train_subjects_list)) 
+    # 'biwi': (6, 6) I 单位矩阵 ||| (8, 8) for vocaset
+
     iter = train_subjects_list.index(args.condition) 
-    # TODO args.condition='M3' 这个是啥意思? iter=3, mouth-3? for the 3-rd subject
+    # TODO 'biwi': args.condition='M3' 这个是啥意思? 
+    # iter=3, mouth-3? for the 3-rd subject, 这个得到的是'M3'在数组中的索引
     # 'vocaset', 'FaceTalk_170913_03279_TA', iter=5 for the 5-th subject
 
-    one_hot = one_hot_labels[iter] # array([0., 0., 0., 1., 0., 0.]) ||| array([0., 0., 0., 0., 0., 1., 0., 0.])
-    one_hot = np.reshape(one_hot,(-1,one_hot.shape[0])) # one_hot.shape = (6,) -> (1, 6) ||| array([[0., 0., 0., 0., 0., 1., 0., 0.]]) with shape = (1, 8)
-    one_hot = torch.FloatTensor(one_hot).to(device=args.device) # [1, 6] in tensor format ||| torch.Size([1, 8])
+    one_hot = one_hot_labels[iter] 
+    # array([0., 0., 0., 1., 0., 0.]) ||| array([0., 0., 0., 0., 0., 1., 0., 0.])
 
-    temp = templates[args.subject] # args.subject='M1', mouth 1; temp=[23370, 3], ||| 'FaceTalk_170809_00138_TA', (5023, 3) for 'vocaset'
+    one_hot = np.reshape(one_hot,(-1,one_hot.shape[0])) 
+    # one_hot.shape = (6,) -> (1, 6) 
+    # ||| array([[0., 0., 0., 0., 0., 1., 0., 0.]]) with shape = (1, 8)
+
+    one_hot = torch.FloatTensor(one_hot).to(device=args.device) 
+    # [1, 6] in tensor format ||| torch.Size([1, 8])
+
+    temp = templates[args.subject] 
+    # 'biwi': args.subject='M1', mouth 1; temp=[23370, 3], 
+    # ||| 'FaceTalk_170809_00138_TA', (5023, 3) for 'vocaset'
              
-    template = temp.reshape((-1)) # [23370, 3] -> 拍平 -> (70110,) ||| (15069,)
+    template = temp.reshape((-1)) # 'biwi': [23370, 3] -> 拍平 -> (70110,) ||| (15069,)
     template = np.reshape(template,(-1,template.shape[0])) # (1, 70110) ||| (1, 15069)
-    template = torch.FloatTensor(template).to(device=args.device) # torch.Size([1, 70110]) ||| torch.Size([1, 15069])
+    template = torch.FloatTensor(template).to(device=args.device) 
+    # torch.Size([1, 70110]) ||| torch.Size([1, 15069])
 
     # 读取音频文件输入：
     wav_path = args.wav_path # 'demo/wav/test.wav'
     test_name = os.path.basename(wav_path).split(".")[0] # test_name = 'test'
+    import ipdb; ipdb.set_trace()
+    print(wav_path)
     speech_array, sampling_rate = librosa.load(os.path.join(wav_path), sr=16000) 
     # NOTE 重要，这里是按照采样率16k来读取音频文件！
     # 如果原始音频不是16k采样率，则重新采样到16k (背后操作), 
@@ -71,18 +96,20 @@ def test_model(args):
     # speech_array.shape=(184274,), sampling_rate=16k. TODO
 
     processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-    audio_feature = np.squeeze(processor(speech_array,sampling_rate=16000).input_values) 
+    audio_feature = np.squeeze(processor(speech_array,
+        sampling_rate=16000).input_values) 
     # (184274,)
 
     audio_feature = np.reshape(audio_feature,(-1,audio_feature.shape[0])) # (1, 184274)
     audio_feature = torch.FloatTensor(audio_feature).to(device=args.device) 
-    # torch.Size([1, 184274])
+    # torch.Size([1, 184274]), audio_feature.requires_grad=False
 
     import ipdb; ipdb.set_trace() # NOTE important here!
     prediction = model.predict(audio_feature, template, one_hot) 
     # audio_feature.shape=[1, 184274], 
     # template.shape=[1, 70110], ||| [1, 15069] for 'vocaset'
-    # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0') ||| torch.Size([1, 8])
+    # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0') 
+    # ||| torch.Size([1, 8])
 
     # OUTPUT: prediction.shape = [1, 278, 70110] ||| [1, 278, 15069]
     # 278 = frame.num/2, 每两帧语音对应到一个包括了70110个点的“图片”
@@ -92,7 +119,8 @@ def test_model(args):
 
     # NOTE
     # 这是把预测结果保存到一个具体的文件：
-    np.save(os.path.join(args.result_path, test_name), prediction.detach().cpu().numpy())
+    np.save(os.path.join(args.result_path, test_name), 
+            prediction.detach().cpu().numpy())
 
 # The implementation of rendering is borrowed from 
 # VOCA: https://github.com/TimoBolkart/voca/blob/master/utils/rendering.py
@@ -224,6 +252,16 @@ def render_sequence(args):
 
 def main():
     import ipdb; ipdb.set_trace()
+    # 下边的代码，确保每次启动train的时候，数据的顺序是一样的，方便debug
+    seed=666
+    np.random.seed(seed)
+    random.seed(seed)
+
+    torch.manual_seed(seed)
+
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic=True
+
     parser = argparse.ArgumentParser(
         description='FaceFormer: Speech-Driven 3D Facial Animation with Transformers')
     parser.add_argument("--model_name", type=str, default="biwi")
@@ -241,9 +279,11 @@ def main():
     parser.add_argument("--train_subjects", type=str, default="F2 F3 F4 M3 M4 M5")
     parser.add_argument("--test_subjects", type=str, default="F1 F5 F6 F7 F8 M1 M2 M6")
     parser.add_argument("--output_path", 
-            type=str, default="demo/output", help='path of the rendered video sequence')
+            type=str, default="demo/output", 
+            help='path of the rendered video sequence')
     parser.add_argument("--wav_path", 
-            type=str, default="demo/wav/test.wav", help='path of the input audio signal')
+            type=str, default="demo/wav/test.wav", 
+            help='path of the input audio signal')
     parser.add_argument("--result_path", 
             type=str, default="demo/result", help='path of the predictions')
     parser.add_argument("--condition", 
@@ -255,9 +295,11 @@ def main():
     parser.add_argument("--background_black", 
             type=bool, default=True, help='whether to use black background')
     parser.add_argument("--template_path", 
-            type=str, default="templates.pkl", help='path of the personalized templates')
+            type=str, default="templates.pkl", 
+            help='path of the personalized templates')
     parser.add_argument("--render_template_path", 
-            type=str, default="templates", help='path of the mesh in BIWI/FLAME topology')
+            type=str, default="templates", 
+            help='path of the mesh in BIWI/FLAME topology')
     args = parser.parse_args()   
 
     import ipdb; ipdb.set_trace()
