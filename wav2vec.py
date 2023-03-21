@@ -97,31 +97,31 @@ array([[False, False, False, False, False, False, False, False, False,
 # linear interpolation layer
 def linear_interpolation(features, input_fps, output_fps, output_len=None):
     import ipdb; ipdb.set_trace()
-    # features.shape = [1, 265, 512], 音频张量
+    # features.shape = [1, 575, 512], 音频张量
     # input_fps = 50, TODO why? 这个50是哪里的知识???
-    # output_fps = 30, TODO why? 对于'vocaset'来说，输出的视频是30fps的！
+    # output_fps = 30, TODO why? 对于'vocaset'来说，输出的视频是30fps(本来是60fps，调成30fps为的是节省gpu内存... NOTE)的！
     # output_len = 160, NOTE 这个是来自视频帧的帧数(reference answer)！！！ 
-    features = features.transpose(1, 2) # [1, 512, 265]
-    seq_len = features.shape[2] / float(input_fps) # 265/50 = 5.3
+    features = features.transpose(1, 2) # [1, 512, 575]
+    seq_len = features.shape[2] / float(input_fps) # 575/50 = 11.5
 
     if output_len is None: # 当，没有参考的视频帧 的帧数的时候，主动预估一下：
-        output_len = int(seq_len * output_fps) 
+        output_len = int(seq_len * output_fps) # 11.5 * 30 = 345
         # TODO 类似于 输入音频长度/音频fps * 视频fps，
         # 来把音频长度转为对应的视频的帧数. NOTE
 
     output_features = F.interpolate(features,
             size=output_len, align_corners=True, mode='linear') 
-    # NOTE TODO, features.shape=[1, 512, 265], size=160=目标视频帧的帧数，
-    # 这是从265个音频timesteps，到160个视频帧，使用线性插值做一下所谓的“对齐”，
-    # 即让音频的长度，和视频帧的帧数，对齐一下。从265到160。
+    # NOTE TODO, features.shape=[1, 512, 575], size=345=目标视频帧的帧数，
+    # 这是从575个音频timesteps，到575个视频帧，使用线性插值做一下所谓的“对齐”，
+    # 即让音频的长度，和视频帧的帧数，对齐一下。从575到345。
 
-    # [1, 512, 160]，这是和视频帧帧数160对齐之后的，音频的表示张量，
-    # 长度为160个音频切片。每个切片会对应到一个video frame。
+    # [1, 512, 345]，这是和视频帧帧数345对齐之后的，音频的表示张量，
+    # 长度为345个音频切片。每个切片会对应到一个video frame。
 
     # 利用“线性插值”做上采样或者下采样, 
     # https://pytorch.org/docs/stable/generated/torch.nn.functional.interpolate.html
 
-    return output_features.transpose(1, 2) # [1, 512, 160] -> [1, 160, 512]
+    return output_features.transpose(1, 2) # [1, 512, 345] -> [1, 345, 512]
 
 class Wav2Vec2Model(Wav2Vec2Model):
     def __init__(self, config):
@@ -144,7 +144,8 @@ class Wav2Vec2Model(Wav2Vec2Model):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict # True
 
         hidden_states = self.feature_extractor(input_values) 
-        # [1, 184274] -> 7层卷积 -> [1, 512, 575] 
+        # [1, 184274] -> 7层卷积(stride=5, 2, 2, 2, 2, 2, 2，一共是320) 
+        # 184274/320 = -> 长度为575的张量，即：[1, 512, 575] 
         # ||| 'vocaset', [1, 85067] -> [1, 512, 265]
 
         hidden_states = hidden_states.transpose(1, 2) 
@@ -159,8 +160,8 @@ class Wav2Vec2Model(Wav2Vec2Model):
         elif dataset == "vocaset":
             hidden_states = linear_interpolation(
                     hidden_states, 50, 30, output_len=frame_num)
-
-            # NOTE 上面的50和30是分别如何确定的? 
+            # 
+            # NOTE 上面的50(point/320/time计算出来的音频fps是50), 视频的30(是事先定的，60/2=30)是分别如何确定的? 
         if attention_mask is not None: # None, not in
             output_lengths = self._get_feat_extract_output_lengths(
                     attention_mask.sum(-1))
@@ -176,7 +177,6 @@ class Wav2Vec2Model(Wav2Vec2Model):
             attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
 
         import ipdb; ipdb.set_trace()
-
         hidden_states, norm_hidden_states = self.feature_projection(hidden_states) 
         # [1, 574, 512] -> 
         # hidden_states=0-th: [1, 574, 768]; 

@@ -211,6 +211,8 @@ class Faceformer(nn.Module):
 
             memory_mask = enc_dec_mask(self.device, 
                     self.dataset, vertice_input.shape[1], hidden_states.shape[1])
+
+            import ipdb; ipdb.set_trace()
             vertice_out = self.transformer_decoder(vertice_input, 
                     hidden_states, tgt_mask=tgt_mask, memory_mask=memory_mask)
             vertice_out = self.vertice_map_r(vertice_out) # NOTE linear projection
@@ -242,6 +244,8 @@ class Faceformer(nn.Module):
                 # i=0, [1, 160] for memory_mask, 只有0-th元素是false，其他都是true; 
                 # i=1, [2, 160], 只有1-th element是false,其他都是true NOTE why?
                 # 这是执行一步transformer decoder: NOTE
+
+                import ipdb; ipdb.set_trace()
                 vertice_out = self.transformer_decoder(vertice_input, 
                         hidden_states, tgt_mask=tgt_mask, memory_mask=memory_mask)
                 # 1. vertice_input: [1, 1, 64]; y[t-1] of frame tensor
@@ -286,16 +290,16 @@ class Faceformer(nn.Module):
         return loss
 
     def predict(self, audio, template, one_hot): 
-        # NOTE, audio.shape=[1, 184274], 
-        # template.shape=[1, 70110], 
-        # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0')
+        # NOTE, audio.shape=[1, 184274], ||| 'voca': [1, 184274] 
+        # template.shape=[1, 70110], ||| 'voca': [1, 15069] 
+        # one_hot=tensor([[0., 0., 0., 1., 0., 0.]], device='cuda:0') ||| 'voca': 0,0,0,0,0,1,0,0 -> (1, 8)
 
         template = template.unsqueeze(1) # (1,1, V*3) -> [1, 1, 70110] 
         # ||| [1, 1, 15069]
-        obj_embedding = self.obj_vector(one_hot) # 6 to 128, [1, 6] -> [1, 128]
+        obj_embedding = self.obj_vector(one_hot) # 6 to 128, [1, 6] -> [1, 128] ||| 'vocaset': [1, 8] -> [1, 64]
         hidden_states = self.audio_encoder(audio, self.dataset).last_hidden_state 
         # audio.shape=[1, 184274], 
-        # self.dataset='BIWI', hidden_states=[1, 574, 768], 
+        # self.dataset='BIWI', hidden_states=[1, 574, 768], ||| 'voca', 345=(575/50)*30, 线性插值下采样了，属于是！ NOTE 
         # 最后一层encoder的输出的张量 
 
         if self.dataset == "BIWI":
@@ -330,11 +334,15 @@ class Faceformer(nn.Module):
             # (1): cuda:0; (2): 'BIWI'; (3): 1; (4): 574 ||| 345 
             # [1+i, 574] ||| [1+i, 345]
             # TODO 为啥memory_mask的前两个位置是false，其他的都是true呢???
+            import ipdb; ipdb.set_trace() # TODO this is about transformer decoder
             vertice_out = self.transformer_decoder(vertice_input, 
                     hidden_states, tgt_mask=tgt_mask, memory_mask=memory_mask) 
             # 1. vertice_input, shape=[1, 1+i, 128] ||| [1, 1+i, 64]
             # 2. hidden_states, shape=[1, 574, 128], acts as memory ||| [1, 345, 64]
             # 3. tgt_mask.shape = [4, 1+i, 1+i] ||| [4, 1+i, 1+i]
+            #    (bsz * num_heads, tgt_len, src_len) NOTE 需要注意这个mask的格式
+            #    0=okay, 1=masked and that position is not used! NOTE
+
             # 4. memory_mask.shape = [1+i, 574], alignment bias ||| [1+i, 345]
             # out, vertice_out.shape = [1, 1+i, 128] ||| [1, 1+i, 64]
 
